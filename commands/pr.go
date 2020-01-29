@@ -17,9 +17,11 @@ var (
 		Usage: `
 pr list [-s <STATE>] [-h <HEAD>] [-b <BASE>] [-o <SORT_KEY> [-^]] [-f <FORMAT>] [-L <LIMIT>]
 pr checkout <PR-NUMBER> [<BRANCH>]
+pr create
 pr show [-uc] [-f <FORMAT>] [-h <HEAD>]
 pr show [-uc] [-f <FORMAT>] <PR-NUMBER>
-pr merge <PR-NUMBER>
+pr merge [-m <msg>] [-h <HEAD>] [-s <merge-method>] <PR-NUMBER>
+pr merge [-m <msg>] [-h <HEAD>] [--squash | --rebase] <PR-NUMBER>
 `,
 		Long: `Manage GitHub Pull Requests for the current repository.
 
@@ -38,7 +40,10 @@ pr merge <PR-NUMBER>
 		pull request instead of opening it.
 
 	* _merge_:
-		Merge a pull request in the current project.
+		Merge a pull request in the current repository. Optionally, the merge
+		method can be specified (''--squash'' or ''--rebase''). Default is a
+		regular merge commit. The command will fail if the selected merge
+		method is not enabled for this repository.
 
 ## Options:
 
@@ -181,6 +186,13 @@ hub-issue(1), hub-pull-request(1), hub(1)
 	cmdMergePr = &Command{
 		Key: "merge",
 		Run: mergePr,
+		KnownFlags: `
+		-h, --head HEAD
+		-X, --method METHOD
+		-m, --message MESSAGE
+		--rebase
+		--squash
+`,
 	}
 )
 
@@ -428,14 +440,7 @@ func mergePr(command *Command, args *Args) {
 	project, err := localRepo.MainProject()
 	utils.Check(err)
 
-	gh := github.NewClient(project.Host)
-
 	args.NoForward()
-	if args.Noop {
-		ui.Printf("Would merge pull request for %s\n", project)
-		return
-	}
-
 	words := args.Words()
 
 	if len(words) == 0 {
@@ -446,9 +451,33 @@ func mergePr(command *Command, args *Args) {
 	prNumber, err := strconv.Atoi(prNumberString)
 	utils.Check(err)
 
-	err = gh.MergePullRequest(project, prNumber, map[string]interface{}{
-		"merge_method": "merge",
-	})
+	mergeMethod := args.Flag.Value("--method")
+	if args.Flag.Bool("--squash") {
+		if mergeMethod != "" {
+			utils.Check(fmt.Errorf("mutually exclusive flags: '--method' '--squash'"))
+		} else {
+			mergeMethod = "squash"
+		}
+	}
+	if args.Flag.Bool("--rebase") {
+		if mergeMethod != "" {
+			utils.Check(fmt.Errorf("mutually exclusive flags: '--method' '--rebase'"))
+		} else {
+			mergeMethod = "rebase"
+		}
+	}
+
+	if mergeMethod != "" && mergeMethod != "merge" && mergeMethod != "squash" && mergeMethod != "rebase" {
+		utils.Check(fmt.Errorf("unsupported merge method: '%s'", mergeMethod))
+	}
+
+	if args.Noop {
+		ui.Printf("Would merge PR #%s in %s using method: %s\n", prNumberString, project, mergeMethod)
+		return
+	}
+
+	gh := github.NewClient(project.Host)
+	err = gh.MergePullRequest(project, prNumber, "", "", args.Flag.Value("--sha"), mergeMethod)
 	utils.Check(err)
 }
 

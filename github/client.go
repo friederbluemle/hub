@@ -146,10 +146,17 @@ func (client *Client) CreatePullRequest(project *Project, params map[string]inte
 	return
 }
 
-func (client *Client) MergePullRequest(project *Project, prNumber int, params map[string]interface{}) (err error) {
+func (client *Client) MergePullRequest(project *Project, prNumber int, commitTitle, commitMessage, sha, mergeMethod string) (err error) {
 	api, err := client.simpleApi()
 	if err != nil {
 		return
+	}
+
+	params := map[string]interface{}{
+		"commit_title":   commitTitle,
+		"commit_message": commitMessage,
+		"sha":            sha,
+		"merge_method":   mergeMethod,
 	}
 
 	res, err := api.PutJSON(fmt.Sprintf("repos/%s/%s/pulls/%d/merge", project.Owner, project.Name, prNumber), params)
